@@ -2,8 +2,10 @@ package main
 
 import (
 	"fmt"
+	"log"
 
 	"github.com/cloudfoundry-community/gautocloud"
+	"github.com/labstack/echo/v4"
 	"github.com/philips-software/gautocloud-connectors/hsdp"
 )
 
@@ -29,4 +31,8 @@ func main() {
 			fmt.Printf("code: %s:%s -> %s\n", c.ID, c.Name, c.Image)
 		}
 	}
+
+	e := echo.New()
+
+	log.Fatal(e.Start(":8080"))
 }
