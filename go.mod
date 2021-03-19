@@ -1,4 +1,4 @@
-module hsdp-func-gateway
+module hsdp-funcion-gateway
 
 go 1.16
 
