@@ -2,10 +2,10 @@ package main
 
 import (
 	"fmt"
-	"log"
+	"github.com/philips-labs/hsdp-funcion-gateway/server"
+	"net/http"
 
 	"github.com/cloudfoundry-community/gautocloud"
-	"github.com/labstack/echo/v4"
 	"github.com/philips-software/gautocloud-connectors/hsdp"
 )
 
@@ -32,7 +32,18 @@ func main() {
 		}
 	}
 
-	e := echo.New()
+	socksMux, err := server.NewServerMux("ronswanson", "localhost")
+	if err != nil {
+		fmt.Printf("error setting up socks mux: %v\n", err)
+		return
+	}
+	httpServer := &http.Server{Addr: fmt.Sprintf(":%d", 8080), Handler: socksMux}
 
-	log.Fatal(e.Start(":8080"))
+	c := make(chan error)
+	go func() { c <- httpServer.ListenAndServe() }()
+
+	select {
+	case err := <-c:
+		fmt.Printf("error: %v\n", err)
+	}
 }
