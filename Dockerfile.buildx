@@ -1,5 +1,7 @@
 # syntax = docker/dockerfile:1-experimental
 
+FROM jpillora/chisel as chisel
+
 FROM golang:1.16.0 as builder
 WORKDIR /build
 COPY go.mod .
@@ -15,5 +17,6 @@ FROM alpine:latest
 RUN apk update && apk add ca-certificates && rm -rf /var/cache/apk/*
 WORKDIR /app
 COPY --from=builder /build/app /app
+COPY --from=chisel /app/chisel /app
 EXPOSE 8080
 CMD ["/app/app"]
