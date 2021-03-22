@@ -110,8 +110,7 @@ func main() {
 			URL: origin,
 		},
 	}
-	r := e.Group("/")
-	r.Use(middleware.ProxyWithConfig(middleware.ProxyConfig{
+	e.Use(middleware.ProxyWithConfig(middleware.ProxyConfig{
 		Balancer:  middleware.NewRandomBalancer(targets),
 		Transport: newIronBackendRoundTripper(http.DefaultTransport, client),
 	}))
