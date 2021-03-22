@@ -1,6 +1,6 @@
 # syntax = docker/dockerfile:1-experimental
 
-FROM jpillora/chisel as chisel
+FROM jpillora/chisel:1.7.6 as chisel
 
 FROM golang:1.16.2 as builder
 WORKDIR /build
