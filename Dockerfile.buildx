@@ -13,10 +13,19 @@ COPY . .
 RUN --mount=type=cache,target=/root/.cache/go-build \
   CGO_ENABLED=0 go build -o app
 
-FROM alpine:latest 
-RUN apk update && apk add ca-certificates && rm -rf /var/cache/apk/*
-WORKDIR /app
-COPY --from=builder /build/app /app
-COPY --from=chisel /app/chisel /app
+## Build final image
+FROM alpine:3.13
+LABEL maintainer="andy.lo-a-foe@philips.com"
+RUN apk add --no-cache ca-certificates supervisor jq curl && rm -rf /tmp/* /var/cache/apk/*
+RUN apk add --no-cache yq --repository http://dl-cdn.alpinelinux.org/alpine/edge/community
+
+RUN mkdir -p /sidecars/bin /sidecars/supervisor/conf.d sidecars/etc
+
+COPY supervisord_configs/ /sidecars/supervisor/conf.d
+COPY --from=builder /build/app /sidecars/bin
+COPY --from=chisel /app/chisel /sidecars/bin
+
 EXPOSE 8080
-CMD ["/app/app"]
+
+COPY supervisord.conf /etc/
+CMD ["supervisord", "--nodaemon", "--configuration", "/etc/supervisord.conf"]

@@ -2,12 +2,32 @@ package main
 
 import (
 	"fmt"
-	"github.com/philips-labs/hsdp-funcion-gateway/server"
 	"net/http"
+	"net/url"
 
 	"github.com/cloudfoundry-community/gautocloud"
+	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 	"github.com/philips-software/gautocloud-connectors/hsdp"
 )
+
+type ironBackendRoundTripper struct {
+	next http.RoundTripper
+}
+
+func newIronBackendRoundTripper(next http.RoundTripper) *ironBackendRoundTripper {
+	if next == nil {
+		next = http.DefaultTransport
+	}
+	return &ironBackendRoundTripper{
+		next: next,
+	}
+}
+
+func (rt *ironBackendRoundTripper) RoundTrip(req *http.Request) (resp *http.Response, err error) {
+	// TODO: spawn iron backend if needed before performing request
+	return rt.next.RoundTrip(req)
+}
 
 func main() {
 	clients, err := gautocloud.GetAll("hsdp:iron-client")
@@ -32,18 +52,21 @@ func main() {
 		}
 	}
 
-	socksMux, err := server.NewServerMux("ronswanson", "localhost")
-	if err != nil {
-		fmt.Printf("error setting up socks mux: %v\n", err)
-		return
-	}
-	httpServer := &http.Server{Addr: fmt.Sprintf(":%d", 8080), Handler: socksMux}
+	e := echo.New()
+	e.Use(middleware.Recover())
+	e.Use(middleware.Logger())
 
-	c := make(chan error)
-	go func() { c <- httpServer.ListenAndServe() }()
-
-	select {
-	case err := <-c:
-		fmt.Printf("error: %v\n", err)
+	// Reverse proxy
+	origin, _ := url.Parse("http://localhost:8081/") // Upstream
+	targets := []*middleware.ProxyTarget{
+		{
+			URL: origin,
+		},
 	}
+	r := e.Group("/")
+	r.Use(middleware.ProxyWithConfig(middleware.ProxyConfig{
+		Balancer:  middleware.NewRandomBalancer(targets),
+		Transport: newIronBackendRoundTripper(http.DefaultTransport),
+	}))
+	_ = e.Start(":8079")
 }
