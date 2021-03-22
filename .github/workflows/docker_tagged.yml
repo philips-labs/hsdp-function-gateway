@@ -40,7 +40,7 @@ jobs:
           file: ./Dockerfile.buildx
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: philipslabs/hsdp-funct-gateway:${{ steps.vars.outputs.tag }}
+          tags: philipslabs/hsdp-func-gateway:${{ steps.vars.outputs.tag }}
           cache-from: type=registry,ref=philipslabs/hsdp-func-gateway:latest
       -
         name: Image digest
