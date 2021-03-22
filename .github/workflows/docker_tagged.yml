@@ -38,7 +38,7 @@ jobs:
         with:
           context: ./
           file: ./Dockerfile
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
           tags: philipslabs/hsdp-func-gateway:${{ steps.vars.outputs.tag }}
           cache-from: type=registry,ref=philipslabs/hsdp-func-gateway:latest
