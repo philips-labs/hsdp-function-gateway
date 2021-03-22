@@ -56,7 +56,8 @@ func (rt *ironBackendRoundTripper) RoundTrip(req *http.Request) (resp *http.Resp
 			task, _, err := rt.client.Tasks.QueueTask(iron.Task{
 				CodeName: schedule.CodeName,
 				Payload:  schedule.Payload,
-				Timeout:  3600,
+				Cluster:  schedule.Cluster,
+				Timeout:  300,
 			})
 			if err != nil {
 				fmt.Printf("failed to spawn task: %v\n", err)
