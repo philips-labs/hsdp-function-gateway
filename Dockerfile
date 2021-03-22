@@ -1,5 +1,3 @@
-# syntax = docker/dockerfile:1-experimental
-
 FROM jpillora/chisel:1.7.6 as chisel
 
 FROM golang:1.16.2 as builder
@@ -10,8 +8,7 @@ RUN go mod download
 
 # Build
 COPY . .
-RUN --mount=type=cache,target=/root/.cache/go-build \
-  CGO_ENABLED=0 go build -o app
+RUN go build -o app
 
 ## Build final image
 FROM alpine:3.13
