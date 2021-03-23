@@ -110,7 +110,7 @@ func (rt *ironBackendRoundTripper) RoundTrip(req *http.Request) (resp *http.Resp
 		return resp, fmt.Errorf("upstream failed to connect in time")
 	}
 	if upstreamRequestURI != "" {
-		req.RequestURI = upstreamRequestURI
+		req.URL.Path = upstreamRequestURI
 	}
 	fmt.Printf("sending request upstream: %s\n", req.RequestURI)
 	resp, err = rt.next.RoundTrip(req)
