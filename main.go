@@ -20,13 +20,10 @@ const (
 )
 
 type ironBackendRoundTripper struct {
-	mu           sync.Mutex
-	backendStart time.Time
-	client       *hsdp.IronClient
-	next         http.RoundTripper
-	running      bool
-	host         string
-	task         *iron.Task
+	mu     sync.Mutex
+	client *hsdp.IronClient
+	next   http.RoundTripper
+	host   string
 }
 
 func newIronBackendRoundTripper(next http.RoundTripper, client *hsdp.IronClient, host string) *ironBackendRoundTripper {
@@ -63,73 +60,57 @@ func (rt *ironBackendRoundTripper) RoundTrip(req *http.Request) (resp *http.Resp
 	// TODO: support /async-function/{code} invocation. Should spawn dedicated task
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
-	if !rt.running || time.Now().Sub(rt.backendStart) < time.Duration(60)*time.Second {
-		// Cancel the task. TODO: investigate graceful shutdown
-		if rt.running && rt.task != nil {
-			rt.client.Tasks.CancelTask(rt.task.ID)
-			rt.task = nil
-			rt.running = false
-		}
-		var codeName string
-		fmt.Printf("Checking: %s\n", req.RequestURI)
-		fmt.Sscanf(req.RequestURI, "/function/%s", &codeName)
-		if codeName != "" { // TODO: should we only allow the original function?
-			codeName = "hsdp-function-" + codeName
-			schedules, _, err := rt.client.Schedules.GetSchedules()
-			if err != nil {
-				fmt.Printf("error retrieving schedules: %v\n", err)
-				return resp, err
-			}
-			var schedule *iron.Schedule
-			for _, s := range *schedules {
-				if s.CodeName == codeName {
-					var sch iron.Schedule
-					sch = s
-					schedule = &sch
-				}
-			}
-			if schedule == nil {
-				fmt.Printf("cannot locate code: %s\n", codeName)
-				return resp, fmt.Errorf("cannot locate code: %s", codeName)
-			}
-			task, _, err := rt.client.Tasks.QueueTask(iron.Task{
-				CodeName: schedule.CodeName,
-				Payload:  schedule.Payload,
-				Cluster:  schedule.Cluster,
-				Timeout:  backendKeepRunning,
-			})
-			if err != nil {
-				fmt.Printf("failed to spawn task: %v\n", err)
-				return resp, err
-			}
-			rt.backendStart = time.Now()
-			rt.task = task
-			rt.running = true
-			// Wait for connection. TODO: poll port 8081 until it responds
-			time.Sleep(time.Duration(5) * time.Second)
-			connected, err := waitForPort(time.Duration(1)*time.Minute, rt.host)
-			if err != nil {
-				fmt.Printf("waitForPort %s failed: %v\n", rt.host, err)
-				return resp, fmt.Errorf("waitForPort %s failed: %w", rt.host, err)
-			}
-			if !connected {
-				fmt.Printf("upstream failed to connect in time\n")
-				return resp, fmt.Errorf("upstream failed to connect in time")
-			}
+
+	var codeName string
+	fmt.Printf("Checking: %s\n", req.RequestURI)
+	fmt.Sscanf(req.RequestURI, "/function/%s", &codeName)
+	if codeName == "" {
+		fmt.Printf("expected /function/{codeName}, got %s\n", req.RequestURI)
+		return resp, fmt.Errorf("invalid request: %s", req.RequestURI)
+	}
+	codeName = "hsdp-function-" + codeName
+	schedules, _, err := rt.client.Schedules.GetSchedules()
+	if err != nil {
+		fmt.Printf("error retrieving schedules: %v\n", err)
+		return resp, err
+	}
+	var schedule *iron.Schedule
+	for _, s := range *schedules {
+		if s.CodeName == codeName {
+			var sch iron.Schedule
+			sch = s
+			schedule = &sch
 		}
 	}
-	// At this point we should have a backend
-	if rt.task == nil {
-		fmt.Printf("no upstream running..\n")
-		return resp, fmt.Errorf("no upstream running")
+	if schedule == nil {
+		fmt.Printf("cannot locate code: %s\n", codeName)
+		return resp, fmt.Errorf("cannot locate code: %s", codeName)
+	}
+	task, _, err := rt.client.Tasks.QueueTask(iron.Task{
+		CodeName: schedule.CodeName,
+		Payload:  schedule.Payload,
+		Cluster:  schedule.Cluster,
+		Timeout:  backendKeepRunning,
+	})
+	if err != nil {
+		fmt.Printf("failed to spawn task: %v\n", err)
+		return resp, err
+	}
+	fmt.Printf("Waiting for iron worker to connect...\n")
+	connected, err := waitForPort(time.Duration(1)*time.Minute, rt.host)
+	if err != nil {
+		fmt.Printf("waitForPort %s failed: %v\n", rt.host, err)
+		return resp, fmt.Errorf("waitForPort %s failed: %w", rt.host, err)
+	}
+	if !connected {
+		fmt.Printf("upstream failed to connect in time\n")
+		return resp, fmt.Errorf("upstream failed to connect in time")
 	}
 	fmt.Printf("sending request upstream..\n")
 	resp, err = rt.next.RoundTrip(req)
 	// Kill tasks after single handling
-	fmt.Printf("cancelling task %s..\n", rt.task.ID)
-	rt.client.Tasks.CancelTask(rt.task.ID)
-	rt.task = nil
-	rt.running = false
+	fmt.Printf("cancelling task %s..\n", task.ID)
+	rt.client.Tasks.CancelTask(task.ID)
 	return resp, err
 }
 
