@@ -58,10 +58,11 @@ func waitForPort(timeout time.Duration, host string) (bool, error) {
 
 func (rt *ironBackendRoundTripper) RoundTrip(req *http.Request) (resp *http.Response, err error) {
 	var codeName string
+	var upstreamRequestURI string
 	fmt.Printf("checking: %s\n", req.RequestURI)
-	fmt.Sscanf(req.RequestURI, "/function/%s", &codeName)
+	fmt.Sscanf(req.RequestURI, "/function/%s/%s", &codeName, &upstreamRequestURI)
 	if codeName == "" {
-		fmt.Printf("expected /function/{codeName}, got %s\n", req.RequestURI)
+		fmt.Printf("expected /function/{codeName}/..., got %s\n", req.RequestURI)
 		return resp, fmt.Errorf("invalid request: %s", req.RequestURI)
 	}
 	codeName = "hsdp-function-" + codeName
@@ -104,8 +105,14 @@ func (rt *ironBackendRoundTripper) RoundTrip(req *http.Request) (resp *http.Resp
 		return resp, fmt.Errorf("upstream failed to connect in time")
 	}
 	fmt.Printf("sending request upstream..\n")
+	if upstreamRequestURI != "" {
+		req.RequestURI = "/" + upstreamRequestURI
+	}
 	resp, err = rt.next.RoundTrip(req)
 	// Kill tasks after single handling
+	if resp != nil {
+		fmt.Printf("response code: %d\n", resp.StatusCode)
+	}
 	fmt.Printf("cancelling task %s..\n", task.ID)
 	rt.client.Tasks.CancelTask(task.ID)
 	return resp, err
@@ -148,7 +155,7 @@ func main() {
 		},
 	}
 	e.Use(middleware.ProxyWithConfig(middleware.ProxyConfig{
-		Balancer:  middleware.NewRandomBalancer(targets),
+		Balancer:  middleware.NewRoundRobinBalancer(targets),
 		Transport: newIronBackendRoundTripper(http.DefaultTransport, client, "localhost:8081"),
 	}))
 	_ = e.Start(":8079")
