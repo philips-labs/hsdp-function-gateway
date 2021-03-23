@@ -2,8 +2,11 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
+	"sync"
+	"time"
 
 	"github.com/cloudfoundry-community/gautocloud"
 	"github.com/labstack/echo/v4"
@@ -12,30 +15,64 @@ import (
 	"github.com/philips-software/go-hsdp-api/iron"
 )
 
+const (
+	backendKeepRunning = 180
+)
+
 type ironBackendRoundTripper struct {
-	client  *hsdp.IronClient
-	next    http.RoundTripper
-	spawned bool
-	task    *iron.Task
+	mu           sync.Mutex
+	backendStart time.Time
+	client       *hsdp.IronClient
+	next         http.RoundTripper
+	running      bool
+	host         string
+	task         *iron.Task
 }
 
-func newIronBackendRoundTripper(next http.RoundTripper, client *hsdp.IronClient) *ironBackendRoundTripper {
+func newIronBackendRoundTripper(next http.RoundTripper, client *hsdp.IronClient, host string) *ironBackendRoundTripper {
 	if next == nil {
 		next = http.DefaultTransport
 	}
 	return &ironBackendRoundTripper{
 		next:   next,
 		client: client,
+		host:   host,
+	}
+}
+
+func waitForPort(timeout time.Duration, host string) (bool, error) {
+	for {
+		if timeout == 0 {
+			timeout = time.Duration(1) * time.Minute
+		}
+		var conn net.Conn
+		conn, err := net.DialTimeout("tcp", host, timeout)
+		if err != nil {
+			return false, err
+		}
+		if conn != nil {
+			err = conn.Close()
+			return true, nil
+		}
 	}
 }
 
 func (rt *ironBackendRoundTripper) RoundTrip(req *http.Request) (resp *http.Response, err error) {
-	if !rt.spawned {
-		// TODO: spawn iron backend if needed before performing request
+	// TODO: support /async-function/{code} invocation. Should spawn dedicated task
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if !rt.running || time.Now().Sub(rt.backendStart) < time.Duration(60)*time.Second {
+		// Cancel the task. TODO: investigate graceful shutdown
+		if rt.running && rt.task != nil {
+			rt.client.Tasks.CancelTask(rt.task.ID)
+			rt.task = nil
+			rt.running = false
+		}
 		var codeName string
 		fmt.Printf("Checking: %s\n", req.RequestURI)
 		fmt.Sscanf(req.RequestURI, "/function/%s", &codeName)
-		if codeName != "" {
+		if codeName != "" { // TODO: should we only allow the original function?
+			codeName = "hsdp-function-" + codeName
 			schedules, _, err := rt.client.Schedules.GetSchedules()
 			if err != nil {
 				fmt.Printf("error retrieving schedules: %v\n", err)
@@ -57,22 +94,31 @@ func (rt *ironBackendRoundTripper) RoundTrip(req *http.Request) (resp *http.Resp
 				CodeName: schedule.CodeName,
 				Payload:  schedule.Payload,
 				Cluster:  schedule.Cluster,
-				Timeout:  300,
+				Timeout:  backendKeepRunning,
 			})
 			if err != nil {
 				fmt.Printf("failed to spawn task: %v\n", err)
 				return rt.next.RoundTrip(req)
 			}
+			rt.backendStart = time.Now()
 			rt.task = task
-			rt.spawned = true
+			rt.running = true
+			// Wait for connection. TODO: poll port 8081 until it responds
+			time.Sleep(time.Duration(5) * time.Second)
+			waitForPort(0, rt.host)
 		}
 	}
-	if rt.task != nil {
-		fmt.Printf("Using task as upstream: %s\n", rt.task.ID)
-	} else {
+	// At this point we should have a backend
+	if rt.task == nil {
 		fmt.Printf("No upstream running..\n")
+		return rt.next.RoundTrip(req)
 	}
-	return rt.next.RoundTrip(req)
+	resp, err = rt.next.RoundTrip(req)
+	// Kill tasks after single handling
+	rt.client.Tasks.CancelTask(rt.task.ID)
+	rt.task = nil
+	rt.running = false
+	return resp, err
 }
 
 func main() {
@@ -113,7 +159,7 @@ func main() {
 	}
 	e.Use(middleware.ProxyWithConfig(middleware.ProxyConfig{
 		Balancer:  middleware.NewRandomBalancer(targets),
-		Transport: newIronBackendRoundTripper(http.DefaultTransport, client),
+		Transport: newIronBackendRoundTripper(http.DefaultTransport, client, "localhost:8081"),
 	}))
 	_ = e.Start(":8079")
 }
