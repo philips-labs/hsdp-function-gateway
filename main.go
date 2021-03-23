@@ -57,12 +57,8 @@ func waitForPort(timeout time.Duration, host string) (bool, error) {
 }
 
 func (rt *ironBackendRoundTripper) RoundTrip(req *http.Request) (resp *http.Response, err error) {
-	// TODO: support /async-function/{code} invocation. Should spawn dedicated task
-	rt.mu.Lock()
-	defer rt.mu.Unlock()
-
 	var codeName string
-	fmt.Printf("Checking: %s\n", req.RequestURI)
+	fmt.Printf("checking: %s\n", req.RequestURI)
 	fmt.Sscanf(req.RequestURI, "/function/%s", &codeName)
 	if codeName == "" {
 		fmt.Printf("expected /function/{codeName}, got %s\n", req.RequestURI)
@@ -86,6 +82,7 @@ func (rt *ironBackendRoundTripper) RoundTrip(req *http.Request) (resp *http.Resp
 		fmt.Printf("cannot locate code: %s\n", codeName)
 		return resp, fmt.Errorf("cannot locate code: %s", codeName)
 	}
+	fmt.Printf("creating task from code %s\n", schedule.CodeName)
 	task, _, err := rt.client.Tasks.QueueTask(iron.Task{
 		CodeName: schedule.CodeName,
 		Payload:  schedule.Payload,
@@ -96,7 +93,7 @@ func (rt *ironBackendRoundTripper) RoundTrip(req *http.Request) (resp *http.Resp
 		fmt.Printf("failed to spawn task: %v\n", err)
 		return resp, err
 	}
-	fmt.Printf("Waiting for iron worker to connect...\n")
+	fmt.Printf("waiting for iron worker to connect..\n")
 	connected, err := waitForPort(time.Duration(1)*time.Minute, rt.host)
 	if err != nil {
 		fmt.Printf("waitForPort %s failed: %v\n", rt.host, err)
