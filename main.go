@@ -41,18 +41,20 @@ func newIronBackendRoundTripper(next http.RoundTripper, client *hsdp.IronClient,
 }
 
 func waitForPort(timeout time.Duration, host string) (bool, error) {
+	if timeout == 0 {
+		timeout = time.Duration(1) * time.Minute
+	}
+	until := time.Now().Add(timeout)
 	for {
-		if timeout == 0 {
-			timeout = time.Duration(1) * time.Minute
-		}
 		var conn net.Conn
-		conn, err := net.DialTimeout("tcp", host, timeout)
-		if err != nil {
-			return false, err
-		}
+		conn, _ = net.DialTimeout("tcp", host, timeout)
 		if conn != nil {
-			err = conn.Close()
-			return true, nil
+			err := conn.Close()
+			return true, err
+		}
+		time.Sleep(100 * time.Millisecond)
+		if time.Now().After(until) {
+			return false, fmt.Errorf("timed out waiting for %s", host)
 		}
 	}
 }
@@ -76,7 +78,7 @@ func (rt *ironBackendRoundTripper) RoundTrip(req *http.Request) (resp *http.Resp
 			schedules, _, err := rt.client.Schedules.GetSchedules()
 			if err != nil {
 				fmt.Printf("error retrieving schedules: %v\n", err)
-				return rt.next.RoundTrip(req)
+				return resp, err
 			}
 			var schedule *iron.Schedule
 			for _, s := range *schedules {
@@ -88,7 +90,7 @@ func (rt *ironBackendRoundTripper) RoundTrip(req *http.Request) (resp *http.Resp
 			}
 			if schedule == nil {
 				fmt.Printf("cannot locate code: %s\n", codeName)
-				return rt.next.RoundTrip(req)
+				return resp, fmt.Errorf("cannot locate code: %s", codeName)
 			}
 			task, _, err := rt.client.Tasks.QueueTask(iron.Task{
 				CodeName: schedule.CodeName,
@@ -98,20 +100,26 @@ func (rt *ironBackendRoundTripper) RoundTrip(req *http.Request) (resp *http.Resp
 			})
 			if err != nil {
 				fmt.Printf("failed to spawn task: %v\n", err)
-				return rt.next.RoundTrip(req)
+				return resp, err
 			}
 			rt.backendStart = time.Now()
 			rt.task = task
 			rt.running = true
 			// Wait for connection. TODO: poll port 8081 until it responds
 			time.Sleep(time.Duration(5) * time.Second)
-			waitForPort(0, rt.host)
+			connected, err := waitForPort(time.Duration(1)*time.Minute, rt.host)
+			if err != nil {
+				return resp, fmt.Errorf("waitForPort %s failed: %w", rt.host, err)
+			}
+			if !connected {
+				return resp, fmt.Errorf("upstream failed to connect in time")
+			}
 		}
 	}
 	// At this point we should have a backend
 	if rt.task == nil {
-		fmt.Printf("No upstream running..\n")
-		return rt.next.RoundTrip(req)
+		fmt.Printf("no upstream running..\n")
+		return resp, fmt.Errorf("no upstream running")
 	}
 	resp, err = rt.next.RoundTrip(req)
 	// Kill tasks after single handling
