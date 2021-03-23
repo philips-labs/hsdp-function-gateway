@@ -109,9 +109,11 @@ func (rt *ironBackendRoundTripper) RoundTrip(req *http.Request) (resp *http.Resp
 			time.Sleep(time.Duration(5) * time.Second)
 			connected, err := waitForPort(time.Duration(1)*time.Minute, rt.host)
 			if err != nil {
+				fmt.Printf("waitForPort %s failed: %v\n", rt.host, err)
 				return resp, fmt.Errorf("waitForPort %s failed: %w", rt.host, err)
 			}
 			if !connected {
+				fmt.Printf("upstream failed to connect in time\n")
 				return resp, fmt.Errorf("upstream failed to connect in time")
 			}
 		}
@@ -121,8 +123,10 @@ func (rt *ironBackendRoundTripper) RoundTrip(req *http.Request) (resp *http.Resp
 		fmt.Printf("no upstream running..\n")
 		return resp, fmt.Errorf("no upstream running")
 	}
+	fmt.Printf("sending request upstream..\n")
 	resp, err = rt.next.RoundTrip(req)
 	// Kill tasks after single handling
+	fmt.Printf("cancelling task %s..\n", rt.task.ID)
 	rt.client.Tasks.CancelTask(rt.task.ID)
 	rt.task = nil
 	rt.running = false
