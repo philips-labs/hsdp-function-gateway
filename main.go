@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -59,13 +60,17 @@ func waitForPort(timeout time.Duration, host string) (bool, error) {
 func (rt *ironBackendRoundTripper) RoundTrip(req *http.Request) (resp *http.Response, err error) {
 	var codeName string
 	var upstreamRequestURI string
-	fmt.Printf("checking: %s\n", req.RequestURI)
-	fmt.Sscanf(req.RequestURI, "/function/%s/%s", &codeName, &upstreamRequestURI)
-	if codeName == "" {
+	parts := strings.Split(req.RequestURI, "/")
+	if len(parts) < 3 || parts[1] != "function" {
 		fmt.Printf("expected /function/{codeName}/..., got %s\n", req.RequestURI)
 		return resp, fmt.Errorf("invalid request: %s", req.RequestURI)
 	}
-	codeName = "hsdp-function-" + codeName
+	if len(parts) > 3 {
+		upstreamRequestURI = "/" + strings.Join(parts[3:], "/")
+	} else {
+		upstreamRequestURI = "/"
+	}
+	codeName = "hsdp-function-" + parts[2]
 	schedules, _, err := rt.client.Schedules.GetSchedules()
 	if err != nil {
 		fmt.Printf("error retrieving schedules: %v\n", err)
@@ -106,7 +111,7 @@ func (rt *ironBackendRoundTripper) RoundTrip(req *http.Request) (resp *http.Resp
 	}
 	fmt.Printf("sending request upstream..\n")
 	if upstreamRequestURI != "" {
-		req.RequestURI = "/" + upstreamRequestURI
+		req.RequestURI = upstreamRequestURI
 	}
 	resp, err = rt.next.RoundTrip(req)
 	// Kill tasks after single handling
