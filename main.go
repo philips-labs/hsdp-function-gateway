@@ -109,10 +109,10 @@ func (rt *ironBackendRoundTripper) RoundTrip(req *http.Request) (resp *http.Resp
 		fmt.Printf("upstream failed to connect in time\n")
 		return resp, fmt.Errorf("upstream failed to connect in time")
 	}
-	fmt.Printf("sending request upstream..\n")
 	if upstreamRequestURI != "" {
 		req.RequestURI = upstreamRequestURI
 	}
+	fmt.Printf("sending request upstream: %s\n", req.RequestURI)
 	resp, err = rt.next.RoundTrip(req)
 	// Kill tasks after single handling
 	if resp != nil {
