@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/philips-software/gautocloud-connectors/hsdp"
+	"github.com/philips-software/go-hsdp-api/iam"
 	"github.com/philips-software/go-hsdp-api/iron"
 )
 
@@ -114,7 +116,7 @@ func (rt *ironBackendRoundTripper) RoundTrip(req *http.Request) (resp *http.Resp
 	}
 	fmt.Printf("sending request upstream: %s\n", req.RequestURI)
 	resp, err = rt.next.RoundTrip(req)
-	// Kill tasks after single handling
+	// Kill task after single handling. In the future we might keep this around for a while longer
 	if resp != nil {
 		fmt.Printf("response code: %d\n", resp.StatusCode)
 	}
@@ -152,6 +154,15 @@ func main() {
 	e.Use(middleware.Recover())
 	e.Use(middleware.Logger())
 
+	// Authentication
+	authType := os.Getenv("GATEWAY_AUTH_TYPE")
+	switch authType {
+	case "token":
+		e.Use(middlewareTokenAuth())
+	case "iam":
+		e.Use(middlewareIAMAuth())
+	}
+
 	// Reverse proxy
 	origin, _ := url.Parse("http://localhost:8081/") // Upstream
 	targets := []*middleware.ProxyTarget{
@@ -164,4 +175,88 @@ func main() {
 		Transport: newIronBackendRoundTripper(http.DefaultTransport, client, "localhost:8081"),
 	}))
 	_ = e.Start(":8079")
+}
+
+func middlewareIAMAuth() echo.MiddlewareFunc {
+	clientID := os.Getenv("AUTH_IAM_CLIENT_ID")
+	clientSecret := os.Getenv("AUTH_IAM_CLIENT_SECRET")
+	region := os.Getenv("AUTH_IAM_REGION")
+	environment := os.Getenv("AUTH_IAM_ENVIRONMENT")
+	orgIDs := strings.Split(os.Getenv("AUTH_IAM_ORGS"), ",")
+	roles := strings.Split(os.Getenv("AUTH_IAM_ROLES"), ",")
+	iamClient, err := iam.NewClient(http.DefaultClient, &iam.Config{
+		Region:         region,
+		Environment:    environment,
+		OAuth2ClientID: clientID,
+		OAuth2Secret:   clientSecret,
+	})
+	if err != nil {
+		return permanentError(err)
+	}
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			authHeader := c.Request().Header.Get("Authorization")
+			var token string
+			fmt.Sscanf(authHeader, "Bearer %s", &token)
+			introspect, _, err := iamClient.WithToken(token).Introspect()
+			if err != nil {
+				c.String(http.StatusUnauthorized, err.Error())
+				return err
+			}
+			allowed := false
+			for _, org := range introspect.Organizations.OrganizationList {
+				if allowed {
+					break
+				}
+				if !contains(orgIDs, org.OrganizationID) {
+					continue
+				}
+				for _, role := range org.Roles {
+					if contains(roles, role) {
+						allowed = true
+						continue
+					}
+				}
+			}
+			if !allowed {
+				c.String(http.StatusUnauthorized, "access denied")
+				return fmt.Errorf("access denied")
+			}
+			return next(c)
+		}
+	}
+}
+
+func middlewareTokenAuth() echo.MiddlewareFunc {
+	authToken := os.Getenv("AUTH_TOKEN_TOKEN")
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			authHeader := c.Request().Header.Get("Authorization")
+			var token string
+			fmt.Sscanf(authHeader, "Token %s", &token)
+			if authToken != token {
+				c.String(http.StatusUnauthorized, "invalid token")
+				return fmt.Errorf("invalid token")
+			}
+			return next(c)
+		}
+	}
+}
+
+func permanentError(err error) func(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			c.String(http.StatusInternalServerError, err.Error())
+			return err
+		}
+	}
+}
+
+func contains(s []string, e string) bool {
+	for _, a := range s {
+		if a == e {
+			return true
+		}
+	}
+	return false
 }

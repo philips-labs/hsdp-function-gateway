@@ -28,7 +28,7 @@ require (
 	github.com/mitchellh/mapstructure v1.4.1 // indirect
 	github.com/pelletier/go-toml v1.8.1 // indirect
 	github.com/philips-software/gautocloud-connectors v0.4.0
-	github.com/philips-software/go-hsdp-api v0.36.1 // indirect
+	github.com/philips-software/go-hsdp-api v0.36.2
 	github.com/pierrec/lz4 v2.6.0+incompatible // indirect
 	github.com/sirupsen/logrus v1.8.1 // indirect
 	github.com/spf13/afero v1.5.1 // indirect
