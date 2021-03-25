@@ -152,7 +152,7 @@ func (rt *ironBackendRoundTripper) handleRequestAsync(scheduleID string, path st
 		fmt.Printf("cannot locate schedule: %s\n", scheduleID)
 		return resp, fmt.Errorf("cannot locate schedule: %s", scheduleID)
 	}
-	fmt.Printf("creating async task from schedule %s\n", schedule.CodeName)
+	fmt.Printf("creating async task from schedule %s\n", schedule.ID)
 	cacheRequest := request{
 		Callback: callbackURL,
 		Path:     path,
@@ -161,12 +161,14 @@ func (rt *ironBackendRoundTripper) handleRequestAsync(scheduleID string, path st
 	for k, v := range req.Header {
 		headers[k] = v[0]
 	}
-	data, err := ioutil.ReadAll(req.Body)
-	if err != nil {
-		fmt.Printf("error reading body: %v\n", err)
-		return resp, err
+	if req.Body != nil {
+		data, err := ioutil.ReadAll(req.Body)
+		if err != nil {
+			fmt.Printf("error reading body: %v\n", err)
+			return resp, err
+		}
+		cacheRequest.Body = string(data)
 	}
-	cacheRequest.Body = string(data)
 	jsonData, err := json.Marshal(&cacheRequest)
 	if err != nil {
 		fmt.Printf("error JSON enocding data: %v\n", err)
@@ -203,13 +205,13 @@ type request struct {
 }
 
 func (rt *ironBackendRoundTripper) handlePayload(upstreamRequestURI string, req *http.Request) (*http.Response, error) {
-	// TODO: search for payload package and return it
 	var taskID string
 	_, _ = fmt.Scanf(upstreamRequestURI, "/%s", &taskID)
 	if taskID == "" {
 		fmt.Printf("taskID not found..\n")
 		return nil, fmt.Errorf("taskID not found")
 	}
+	fmt.Printf("searching cache for task: %s\n", taskID)
 	data, ok := rt.requestCache.Get(taskID)
 	if !ok {
 		fmt.Printf("request data for taskID not found: %s\n", taskID)
@@ -217,13 +219,13 @@ func (rt *ironBackendRoundTripper) handlePayload(upstreamRequestURI string, req 
 	}
 	requestData, ok := data.([]byte)
 	if !ok {
-		fmt.Printf("cache item was not a request\n")
-		return nil, fmt.Errorf("cache item was not a request")
+		fmt.Printf("cache item was not a byte array\n")
+		return nil, fmt.Errorf("cache item was not a byte array")
 	}
 	headers := make(http.Header, 0)
 	headers.Set("Content-Type", "application/json")
 
-	fmt.Printf("TODO: pickup of payload package\n")
+	fmt.Printf("returning payload: %s\n", string(requestData))
 	return &http.Response{
 		Status:     "200 OK",
 		StatusCode: http.StatusOK,
