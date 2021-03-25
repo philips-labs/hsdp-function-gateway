@@ -79,7 +79,9 @@ func (rt *ironBackendRoundTripper) RoundTrip(req *http.Request) (resp *http.Resp
 		upstreamRequestURI = "/"
 	}
 	scheduleID := parts[2]
-	switch parts[1] {
+	path := parts[1]
+	fmt.Printf("task from schedule %s calling handlers for %s with requestURI %s\n", scheduleID, path, upstreamRequestURI)
+	switch path {
 	case "payload":
 		return rt.handlePayload(upstreamRequestURI, req)
 	case "function":
@@ -206,7 +208,7 @@ type request struct {
 
 func (rt *ironBackendRoundTripper) handlePayload(upstreamRequestURI string, req *http.Request) (*http.Response, error) {
 	var taskID string
-	_, _ = fmt.Scanf(upstreamRequestURI, "/%s", &taskID)
+	_, _ = fmt.Sscanf(upstreamRequestURI, "/%s", &taskID)
 	if taskID == "" {
 		fmt.Printf("taskID not found..\n")
 		return nil, fmt.Errorf("taskID not found")
