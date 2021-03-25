@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -15,6 +16,7 @@ import (
 	"github.com/cloudfoundry-community/gautocloud"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	"github.com/patrickmn/go-cache"
 	"github.com/philips-software/gautocloud-connectors/hsdp"
 	"github.com/philips-software/go-hsdp-api/iam"
 	"github.com/philips-software/go-hsdp-api/iron"
@@ -25,20 +27,23 @@ const (
 )
 
 type ironBackendRoundTripper struct {
-	mu     sync.Mutex
-	client *hsdp.IronClient
-	next   http.RoundTripper
-	host   string
+	mu           sync.Mutex
+	client       *hsdp.IronClient
+	next         http.RoundTripper
+	host         string
+	requestCache *cache.Cache
 }
 
 func newIronBackendRoundTripper(next http.RoundTripper, client *hsdp.IronClient, host string) *ironBackendRoundTripper {
 	if next == nil {
 		next = http.DefaultTransport
 	}
+
 	return &ironBackendRoundTripper{
-		next:   next,
-		client: client,
-		host:   host,
+		next:         next,
+		client:       client,
+		host:         host,
+		requestCache: cache.New(20*time.Minute, 40*time.Minute),
 	}
 }
 
@@ -129,7 +134,7 @@ func (rt *ironBackendRoundTripper) handleRequest(scheduleID, upstreamRequestURI 
 	return resp, err
 }
 
-func (rt *ironBackendRoundTripper) handleRequestAsync(scheduleID string, uri string, req *http.Request) (resp *http.Response, err error) {
+func (rt *ironBackendRoundTripper) handleRequestAsync(scheduleID string, path string, req *http.Request) (resp *http.Response, err error) {
 	// Validate if request is suitable for async handling
 	if req.Method != http.MethodPost {
 		return resp, fmt.Errorf("only the POST method is supported for async-function invocations")
@@ -148,6 +153,25 @@ func (rt *ironBackendRoundTripper) handleRequestAsync(scheduleID string, uri str
 		return resp, fmt.Errorf("cannot locate schedule: %s", scheduleID)
 	}
 	fmt.Printf("creating async task from schedule %s\n", schedule.CodeName)
+	cacheRequest := request{
+		Callback: callbackURL,
+		Path:     path,
+	}
+	headers := make(map[string]string)
+	for k, v := range req.Header {
+		headers[k] = v[0]
+	}
+	data, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		fmt.Printf("error reading body: %v\n", err)
+		return resp, err
+	}
+	cacheRequest.Body = string(data)
+	jsonData, err := json.Marshal(&cacheRequest)
+	if err != nil {
+		fmt.Printf("error JSON enocding data: %v\n", err)
+		return resp, err
+	}
 	task, _, err := rt.client.Tasks.QueueTask(iron.Task{
 		CodeName: schedule.CodeName,
 		Payload:  schedule.Payload,
@@ -158,9 +182,7 @@ func (rt *ironBackendRoundTripper) handleRequestAsync(scheduleID string, uri str
 		fmt.Printf("failed to spawn task: %v\n", err)
 		return resp, err
 	}
-	// TODO: We should prepare a request package that will be picked up by siderite
-	// The package should contain all information so the task itself can complete
-	// including calling back to the callback URL
+	rt.requestCache.Set(task.ID, jsonData, cache.DefaultExpiration)
 	return &http.Response{
 		Status:     "202 Accepted",
 		StatusCode: http.StatusAccepted,
@@ -173,8 +195,34 @@ func (rt *ironBackendRoundTripper) handleRequestAsync(scheduleID string, uri str
 	}, nil
 }
 
+type request struct {
+	Headers  map[string]string `json:"headers"`
+	Body     string            `json:"body"`
+	Callback string            `json:"callback"`
+	Path     string            `json:"path"`
+}
+
 func (rt *ironBackendRoundTripper) handlePayload(upstreamRequestURI string, req *http.Request) (*http.Response, error) {
 	// TODO: search for payload package and return it
+	var taskID string
+	_, _ = fmt.Scanf(upstreamRequestURI, "/%s", &taskID)
+	if taskID == "" {
+		fmt.Printf("taskID not found..\n")
+		return nil, fmt.Errorf("taskID not found")
+	}
+	data, ok := rt.requestCache.Get(taskID)
+	if !ok {
+		fmt.Printf("request data for taskID not found: %s\n", taskID)
+		return nil, fmt.Errorf("request data not found")
+	}
+	requestData, ok := data.([]byte)
+	if !ok {
+		fmt.Printf("cache item was not a request\n")
+		return nil, fmt.Errorf("cache item was not a request")
+	}
+	headers := make(http.Header, 0)
+	headers.Set("Content-Type", "application/json")
+
 	fmt.Printf("TODO: pickup of payload package\n")
 	return &http.Response{
 		Status:     "200 OK",
@@ -183,8 +231,8 @@ func (rt *ironBackendRoundTripper) handlePayload(upstreamRequestURI string, req 
 		ProtoMajor: 1,
 		ProtoMinor: 1,
 		Request:    req,
-		Header:     make(http.Header, 0),
-		Body:       ioutil.NopCloser(bytes.NewBufferString("")),
+		Header:     headers,
+		Body:       ioutil.NopCloser(bytes.NewBuffer(requestData)),
 	}, nil
 }
 

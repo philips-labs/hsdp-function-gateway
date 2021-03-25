@@ -26,6 +26,7 @@ require (
 	github.com/minio/minio-go/v7 v7.0.10 // indirect
 	github.com/minio/sha256-simd v1.0.0 // indirect
 	github.com/mitchellh/mapstructure v1.4.1 // indirect
+	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/pelletier/go-toml v1.8.1 // indirect
 	github.com/philips-software/gautocloud-connectors v0.4.0
 	github.com/philips-software/go-hsdp-api v0.36.2
