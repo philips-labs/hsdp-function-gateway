@@ -13,11 +13,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cloudfoundry-community/gautocloud"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/patrickmn/go-cache"
-	"github.com/philips-software/gautocloud-connectors/hsdp"
 	"github.com/philips-software/go-hsdp-api/iam"
 	"github.com/philips-software/go-hsdp-api/iron"
 )
@@ -28,13 +26,13 @@ const (
 
 type ironBackendRoundTripper struct {
 	mu           sync.Mutex
-	client       *hsdp.IronClient
+	client       *iron.Client
 	next         http.RoundTripper
 	host         string
 	requestCache *cache.Cache
 }
 
-func newIronBackendRoundTripper(next http.RoundTripper, client *hsdp.IronClient, host string) *ironBackendRoundTripper {
+func newIronBackendRoundTripper(next http.RoundTripper, client *iron.Client, host string) *ironBackendRoundTripper {
 	if next == nil {
 		next = http.DefaultTransport
 	}
@@ -235,25 +233,20 @@ func (rt *ironBackendRoundTripper) handlePayload(taskID string, req *http.Reques
 }
 
 func main() {
-	clients, err := gautocloud.GetAll("hsdp:iron-client")
+	var config iron.Config
+
+	err := json.Unmarshal([]byte(os.Getenv("IRON_CONFIG")), &config)
 	if err != nil {
 		fmt.Printf("no iron services found: %v\n", err)
+		return
 	}
-	fmt.Printf("found %d client(s)\n", len(clients))
-
-	var client *hsdp.IronClient
-	for _, c := range clients {
-		var ok bool
-		client, ok = c.(*hsdp.IronClient)
-		if !ok {
-			fmt.Printf("invalid client: %q\n", c)
-			return
-		}
-		codes, _, err := client.Codes.GetCodes()
-		if err != nil {
-			fmt.Printf("error getting codes: %v\n", err)
-			continue
-		}
+	client, err := iron.NewClient(&config)
+	if err != nil {
+		fmt.Printf("invalid client: %v\n", err)
+		return
+	}
+	codes, _, _ := client.Codes.GetCodes()
+	if codes != nil {
 		for _, c := range *codes {
 			fmt.Printf("code: %s:%s -> %s\n", c.ID, c.Name, c.Image)
 		}
