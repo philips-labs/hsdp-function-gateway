@@ -4,7 +4,7 @@ go 1.16
 
 require (
 	github.com/google/go-cmp v0.5.4 // indirect
-	github.com/labstack/echo/v4 v4.2.1
+	github.com/labstack/echo/v4 v4.2.2
 	github.com/mattn/go-colorable v0.1.8 // indirect
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/philips-software/go-hsdp-api v0.36.6
