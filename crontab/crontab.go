@@ -37,7 +37,7 @@ func (j Job) Run() {
 
 func Start(client *iron.Client) (chan bool, error) {
 	ch := make(chan bool)
-	ticker := time.NewTicker(15 * time.Second)
+	ticker := time.NewTicker(30 * time.Second)
 	crontab := cron.New()
 	crontab.Start()
 
@@ -49,7 +49,6 @@ func Start(client *iron.Client) (chan bool, error) {
 				fmt.Printf("exiting...\n")
 				return
 			case <-ticker.C: // Refresh
-				fmt.Printf("Refreshing...\n")
 				// Collect all cronjob entries
 				cronSchedules, err := getCronEntries(client)
 				if err != nil {
@@ -60,7 +59,7 @@ func Start(client *iron.Client) (chan bool, error) {
 				entries := crontab.Entries()
 				for _, e := range entries {
 					if job, ok := e.Job.(Job); ok {
-						fmt.Printf("Active entry %d: %s, %v\n", e.ID, job.ScheduleID, e.Schedule)
+						fmt.Printf("Active entry %d: %s, next: %v\n", e.ID, job.ScheduleID, e.Next)
 					}
 				}
 			}
