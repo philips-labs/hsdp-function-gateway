@@ -11,12 +11,28 @@ import (
 )
 
 type Job struct {
+	client      *iron.Client
 	ScheduleID  string
 	CronPayload siderite.CronPayload
 }
 
 func (j Job) Run() {
-	fmt.Printf("TODO: Triggering schedule %s ...\n", j.ScheduleID)
+	schedule, _, err := j.client.Schedules.GetSchedule(j.ScheduleID)
+	if err != nil {
+		fmt.Printf("Run %s: failed to find schedule: %v\n", j.ScheduleID, err)
+		return
+	}
+	task, _, err := j.client.Tasks.QueueTask(iron.Task{
+		CodeName: schedule.CodeName,
+		Payload:  j.CronPayload.EncryptedPayload,
+		Cluster:  schedule.Cluster,
+		Timeout:  j.CronPayload.Timeout,
+	})
+	if err != nil {
+		fmt.Printf("Run %s: error queuing task: %v\n", j.ScheduleID, err)
+		return
+	}
+	fmt.Printf("Run %s: triggered task %s\n", j.ScheduleID, task.ID)
 }
 
 func Start(client *iron.Client) (chan bool, error) {
@@ -40,7 +56,7 @@ func Start(client *iron.Client) (chan bool, error) {
 					fmt.Printf("Error retrieving Iron schedules: %v\n", err)
 					continue
 				}
-				updateEntries(crontab, cronSchedules)
+				updateEntries(client, crontab, cronSchedules)
 				entries := crontab.Entries()
 				for _, e := range entries {
 					if job, ok := e.Job.(Job); ok {
@@ -54,7 +70,7 @@ func Start(client *iron.Client) (chan bool, error) {
 	return ch, nil
 }
 
-func updateEntries(crontab *cron.Cron, schedules map[string]siderite.CronPayload) {
+func updateEntries(client *iron.Client, crontab *cron.Cron, schedules map[string]siderite.CronPayload) {
 	entries := crontab.Entries()
 	// Add new entries
 	for id, cronPayload := range schedules {
@@ -71,6 +87,7 @@ func updateEntries(crontab *cron.Cron, schedules map[string]siderite.CronPayload
 			job := Job{
 				ScheduleID:  id,
 				CronPayload: cronPayload,
+				client:      client,
 			}
 			newID, err := crontab.AddJob(cronPayload.Schedule, job)
 			if err != nil {
