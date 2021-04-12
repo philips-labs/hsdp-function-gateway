@@ -16,6 +16,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/patrickmn/go-cache"
+	"github.com/philips-labs/hsdp-funcion-gateway/crontab"
 	"github.com/philips-software/go-hsdp-api/iam"
 	"github.com/philips-software/go-hsdp-api/iron"
 )
@@ -276,7 +277,15 @@ func main() {
 		Balancer:  middleware.NewRoundRobinBalancer(targets),
 		Transport: newIronBackendRoundTripper(http.DefaultTransport, client, "localhost:8081"),
 	}))
+
+	done, err := crontab.Start(client) // Start crontab
+	if err != nil {
+		fmt.Printf("failed to start cronjob: %v\n", err)
+		return
+	}
+
 	_ = e.Start(":8079")
+	done <- true
 }
 
 func middlewareIAMAuth() echo.MiddlewareFunc {
