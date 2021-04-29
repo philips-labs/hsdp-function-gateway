@@ -16,6 +16,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/patrickmn/go-cache"
+	"github.com/philips-labs/ferrite/server"
 	"github.com/philips-labs/hsdp-funcion-gateway/crontab"
 	"github.com/philips-software/go-hsdp-api/iam"
 	"github.com/philips-software/go-hsdp-api/iron"
@@ -241,6 +242,19 @@ func main() {
 		fmt.Printf("no iron services found: %v\n", err)
 		return
 	}
+	if os.Getenv("BACKEND_TYPE") == "ferrite" { // Need bootstrap
+		bootstrap, err := server.Bootstrap(config.BaseURL, config.Token)
+		if err != nil {
+			fmt.Printf("Error bootstrapping: %v\n", err)
+			return
+		}
+		config.ProjectID = bootstrap.ProjectID
+		config.Project = bootstrap.ProjectID
+		config.ClusterInfo[0].ClusterID = bootstrap.ClusterID
+		config.ClusterInfo[0].Pubkey = bootstrap.PublicKey
+		fmt.Printf("Bootstrapped ferrite config\n")
+	}
+
 	client, err := iron.NewClient(&config)
 	if err != nil {
 		fmt.Printf("invalid client: %v\n", err)
