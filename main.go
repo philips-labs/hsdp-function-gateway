@@ -243,9 +243,7 @@ func main() {
 		return
 	}
 	if os.Getenv("BACKEND_TYPE") == "ferrite" { // Need bootstrap
-		bootstrapURL := fmt.Sprintf("%s/bootstrap", config.BaseURL)
-		token := config.Token
-		bootstrap, err := server.Bootstrap(bootstrapURL, token)
+		bootstrap, err := server.Bootstrap(config.BaseURL, config.Token)
 		if err != nil {
 			fmt.Printf("Error bootstrapping: %v\n", err)
 			return
