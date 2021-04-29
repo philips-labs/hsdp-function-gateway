@@ -252,6 +252,7 @@ func main() {
 		}
 		config.ProjectID = bootstrap.ProjectID
 		config.Project = bootstrap.ProjectID
+		config.ClusterInfo[0].ClusterID = bootstrap.ClusterID
 		config.ClusterInfo[0].Pubkey = bootstrap.PublicKey
 		fmt.Printf("Bootstrapped ferrite config\n")
 	}
