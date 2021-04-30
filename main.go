@@ -18,6 +18,7 @@ import (
 	"github.com/patrickmn/go-cache"
 	"github.com/philips-labs/ferrite/server"
 	"github.com/philips-labs/hsdp-funcion-gateway/crontab"
+	"github.com/philips-labs/siderite"
 	"github.com/philips-software/go-hsdp-api/iam"
 	"github.com/philips-software/go-hsdp-api/iron"
 )
@@ -78,28 +79,42 @@ func (rt *ironBackendRoundTripper) RoundTrip(req *http.Request) (resp *http.Resp
 	} else {
 		upstreamRequestURI = "/"
 	}
-	scheduleID := parts[2]
+	codeID := parts[2]
 	path := parts[1]
-	fmt.Printf("task from task/schedule [%s] calling handler for [%s] with requestURI [%s]\n", scheduleID, path, upstreamRequestURI)
+	fmt.Printf("task from codeID [%s] calling handler for [%s] with requestURI [%s]\n", codeID, path, upstreamRequestURI)
 	switch path {
 	case "payload":
-		return rt.handlePayload(scheduleID, req)
+		return rt.handlePayload(codeID, req)
 	case "function":
-		return rt.handleRequest(scheduleID, upstreamRequestURI, req)
+		return rt.handleRequest(codeID, upstreamRequestURI, req)
 	default: // Async
-		return rt.handleRequestAsync(scheduleID, upstreamRequestURI, req)
+		return rt.handleRequestAsync(codeID, upstreamRequestURI, req)
 	}
 }
 
-func (rt *ironBackendRoundTripper) handleRequest(scheduleID, upstreamRequestURI string, req *http.Request) (resp *http.Response, err error) {
-	schedule, _, err := rt.client.Schedules.GetSchedule(scheduleID)
+func (rt *ironBackendRoundTripper) handleRequest(codeID, upstreamRequestURI string, req *http.Request) (resp *http.Response, err error) {
+	code, _, err := rt.client.Codes.GetCode(codeID)
+	if err != nil {
+		fmt.Printf("error retrieving code: %v\n", err)
+		return resp, err
+	}
+	schedules, _, err := rt.client.Schedules.GetSchedulesWithCode(code.Name)
 	if err != nil {
 		fmt.Printf("error retrieving schedule: %v\n", err)
 		return resp, err
 	}
+	var schedule *iron.Schedule
+	var cfg siderite.CronPayload
+	for _, s := range *schedules {
+		_ = json.Unmarshal([]byte(s.Payload), &cfg)
+		if cfg.Type == "sync" {
+			schedule = &s
+			break
+		}
+	}
 	if schedule == nil {
-		fmt.Printf("cannot locate schedule: %s\n", scheduleID)
-		return resp, fmt.Errorf("cannot locate schedule: %s", scheduleID)
+		fmt.Printf("cannot locate sync schedule for codeID: %s\n", codeID)
+		return resp, fmt.Errorf("cannot locate schedul for codeID: %s", codeID)
 	}
 	fmt.Printf("creating task from schedule %s\n", schedule.CodeName)
 	task, _, err := rt.client.Tasks.QueueTask(iron.Task{
@@ -136,7 +151,7 @@ func (rt *ironBackendRoundTripper) handleRequest(scheduleID, upstreamRequestURI 
 	return resp, err
 }
 
-func (rt *ironBackendRoundTripper) handleRequestAsync(scheduleID string, path string, req *http.Request) (resp *http.Response, err error) {
+func (rt *ironBackendRoundTripper) handleRequestAsync(codeID string, path string, req *http.Request) (resp *http.Response, err error) {
 	// Validate if request is suitable for async handling
 	if req.Method != http.MethodPost {
 		return resp, fmt.Errorf("only the POST method is supported for async-function invocations")
@@ -145,14 +160,28 @@ func (rt *ironBackendRoundTripper) handleRequestAsync(scheduleID string, path st
 	if callbackURL == "" {
 		return resp, fmt.Errorf("missing X-Callback-URL header")
 	}
-	schedule, _, err := rt.client.Schedules.GetSchedule(scheduleID)
+	code, _, err := rt.client.Codes.GetCode(codeID)
+	if err != nil {
+		fmt.Printf("error retrieving code: %v\n", err)
+		return resp, err
+	}
+	schedules, _, err := rt.client.Schedules.GetSchedulesWithCode(code.Name)
 	if err != nil {
 		fmt.Printf("error retrieving schedule: %v\n", err)
 		return resp, err
 	}
+	var schedule *iron.Schedule
+	var cfg siderite.CronPayload
+	for _, s := range *schedules {
+		_ = json.Unmarshal([]byte(s.Payload), &cfg)
+		if cfg.Type == "sync" {
+			schedule = &s
+			break
+		}
+	}
 	if schedule == nil {
-		fmt.Printf("cannot locate schedule: %s\n", scheduleID)
-		return resp, fmt.Errorf("cannot locate schedule: %s", scheduleID)
+		fmt.Printf("cannot locate async schedule for codeID: %s\n", codeID)
+		return resp, fmt.Errorf("cannot async locate schedule for codeID: %s", codeID)
 	}
 	fmt.Printf("creating async task from schedule %s\n", schedule.ID)
 	cacheRequest := request{
