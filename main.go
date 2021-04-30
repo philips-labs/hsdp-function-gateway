@@ -103,6 +103,7 @@ func (rt *ironBackendRoundTripper) handleRequest(codeID, upstreamRequestURI stri
 		fmt.Printf("error retrieving schedule: %v\n", err)
 		return resp, err
 	}
+	fmt.Printf("found %d matching schedule(s)\n", len(*schedules))
 	var schedule *iron.Schedule
 	var cfg siderite.CronPayload
 	for _, s := range *schedules {
@@ -114,12 +115,12 @@ func (rt *ironBackendRoundTripper) handleRequest(codeID, upstreamRequestURI stri
 	}
 	if schedule == nil {
 		fmt.Printf("cannot locate sync schedule for codeID: %s\n", codeID)
-		return resp, fmt.Errorf("cannot locate schedul for codeID: %s", codeID)
+		return resp, fmt.Errorf("cannot locate schedule for codeID: %s", codeID)
 	}
 	fmt.Printf("creating task from schedule %s\n", schedule.CodeName)
 	task, _, err := rt.client.Tasks.QueueTask(iron.Task{
 		CodeName: schedule.CodeName,
-		Payload:  schedule.Payload,
+		Payload:  cfg.EncryptedPayload,
 		Cluster:  schedule.Cluster,
 		Timeout:  backendKeepRunning,
 	})
@@ -170,6 +171,8 @@ func (rt *ironBackendRoundTripper) handleRequestAsync(codeID string, path string
 		fmt.Printf("error retrieving schedule: %v\n", err)
 		return resp, err
 	}
+	fmt.Printf("found %d matching schedule(s)\n", len(*schedules))
+
 	var schedule *iron.Schedule
 	var cfg siderite.CronPayload
 	for _, s := range *schedules {
@@ -207,7 +210,7 @@ func (rt *ironBackendRoundTripper) handleRequestAsync(codeID string, path string
 	}
 	task, _, err := rt.client.Tasks.QueueTask(iron.Task{
 		CodeName: schedule.CodeName,
-		Payload:  schedule.Payload,
+		Payload:  cfg.EncryptedPayload,
 		Cluster:  schedule.Cluster,
 		Timeout:  backendKeepRunning,
 	})
