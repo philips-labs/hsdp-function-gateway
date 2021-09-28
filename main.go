@@ -18,7 +18,7 @@ import (
 	"github.com/patrickmn/go-cache"
 	"github.com/philips-labs/ferrite/server"
 	"github.com/philips-labs/hsdp-funcion-gateway/crontab"
-	"github.com/philips-labs/siderite"
+	siderite "github.com/philips-labs/siderite/models"
 	"github.com/philips-software/go-hsdp-api/iam"
 	"github.com/philips-software/go-hsdp-api/iron"
 )

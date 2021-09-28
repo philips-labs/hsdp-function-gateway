@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/philips-labs/siderite"
+	siderite "github.com/philips-labs/siderite/models"
 	"github.com/philips-software/go-hsdp-api/iron"
 	"github.com/robfig/cron/v3"
 )
