@@ -177,7 +177,7 @@ func (rt *ironBackendRoundTripper) handleRequestAsync(codeID string, path string
 	var cfg siderite.CronPayload
 	for _, s := range *schedules {
 		_ = json.Unmarshal([]byte(s.Payload), &cfg)
-		if cfg.Type == "sync" {
+		if cfg.Type == "async" {
 			schedule = &s
 			break
 		}
