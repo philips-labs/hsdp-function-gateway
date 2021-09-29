@@ -207,10 +207,15 @@ func main() {
 	authType := os.Getenv("GATEWAY_AUTH_TYPE")
 	var authMiddleware echo.MiddlewareFunc
 	switch authType {
-	case "token":
-		authMiddleware = middlewareTokenAuth()
+	case "none":
+		authMiddleware = noneAuth()
 	case "iam":
 		authMiddleware = middlewareIAMAuth()
+	case "token":
+		authMiddleware = middlewareTokenAuth()
+	default:
+		fmt.Printf("invalid authType: %s, falling back to 'token'\n", authType)
+		authMiddleware = noneAuth()
 	}
 
 	// Reverse proxy
@@ -365,6 +370,14 @@ func middlewareIAMAuth() echo.MiddlewareFunc {
 				_ = c.String(http.StatusUnauthorized, "access denied")
 				return fmt.Errorf("access denied")
 			}
+			return next(c)
+		}
+	}
+}
+
+func noneAuth() echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
 			return next(c)
 		}
 	}
