@@ -115,7 +115,7 @@ func updateEntries(client *iron.Client, crontab *cron.Cron, schedules map[string
 }
 
 func getCronEntries(client *iron.Client) (map[string]siderite.CronPayload, error) {
-	cronSchedules := make(map[string]siderite.CronPayload, 0)
+	cronSchedules := make(map[string]siderite.CronPayload)
 	schedules, _, err := client.Schedules.GetSchedules()
 	if err != nil {
 		return cronSchedules, nil

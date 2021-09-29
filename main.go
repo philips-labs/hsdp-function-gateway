@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/labstack/echo/v4"
@@ -28,7 +27,6 @@ const (
 )
 
 type ironBackendRoundTripper struct {
-	mu           sync.Mutex
 	client       *iron.Client
 	next         http.RoundTripper
 	host         string
@@ -226,7 +224,7 @@ func (rt *ironBackendRoundTripper) handleRequestAsync(codeID string, path string
 		ProtoMajor: 1,
 		ProtoMinor: 1,
 		Request:    req,
-		Header:     make(http.Header, 0),
+		Header:     make(http.Header),
 		Body:       ioutil.NopCloser(bytes.NewBufferString(fmt.Sprintf("{\"taskID\":\"%s\"}\n", task.ID))),
 	}, nil
 }
@@ -250,7 +248,7 @@ func (rt *ironBackendRoundTripper) handlePayload(taskID string, req *http.Reques
 		fmt.Printf("cache item was not a byte array\n")
 		return nil, fmt.Errorf("cache item was not a byte array")
 	}
-	headers := make(http.Header, 0)
+	headers := make(http.Header)
 	headers.Set("Content-Type", "application/json")
 
 	fmt.Printf("returning payload: %s\n", string(requestData))
