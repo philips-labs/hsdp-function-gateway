@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	backendKeepRunning = 180
+	backendKeepRunning = 7200
 )
 
 type ironBackendRoundTripper struct {
