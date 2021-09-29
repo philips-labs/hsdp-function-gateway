@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -68,8 +67,8 @@ func waitForPort(timeout time.Duration, host string) (bool, error) {
 func (rt *ironBackendRoundTripper) RoundTrip(req *http.Request) (resp *http.Response, err error) {
 	var upstreamRequestURI string
 	parts := strings.Split(req.RequestURI, "/")
-	if len(parts) < 3 || !(parts[1] == "function" || parts[1] == "async-function" || parts[1] == "payload") {
-		fmt.Printf("expected /{method}/{id}/..., got %s\n", req.RequestURI)
+	if len(parts) < 3 || !(parts[1] == "function") {
+		fmt.Printf("expected /function/{id}/..., got %s\n", req.RequestURI)
 		return resp, fmt.Errorf("invalid request: %s", req.RequestURI)
 	}
 	if len(parts) > 3 {
@@ -80,14 +79,7 @@ func (rt *ironBackendRoundTripper) RoundTrip(req *http.Request) (resp *http.Resp
 	codeID := parts[2]
 	path := parts[1]
 	fmt.Printf("task from codeID [%s] calling handler for [%s] with requestURI [%s]\n", codeID, path, upstreamRequestURI)
-	switch path {
-	case "payload":
-		return rt.handlePayload(codeID, req)
-	case "function":
-		return rt.handleRequest(codeID, upstreamRequestURI, req)
-	default: // Async
-		return rt.handleRequestAsync(codeID, upstreamRequestURI, req)
-	}
+	return rt.handleRequest(codeID, upstreamRequestURI, req)
 }
 
 func (rt *ironBackendRoundTripper) handleRequest(codeID, upstreamRequestURI string, req *http.Request) (resp *http.Response, err error) {
@@ -150,85 +142,6 @@ func (rt *ironBackendRoundTripper) handleRequest(codeID, upstreamRequestURI stri
 	return resp, err
 }
 
-func (rt *ironBackendRoundTripper) handleRequestAsync(codeID string, path string, req *http.Request) (resp *http.Response, err error) {
-	// Validate if request is suitable for async handling
-	if req.Method != http.MethodPost {
-		return resp, fmt.Errorf("only the POST method is supported for async-function invocations")
-	}
-	callbackURL := req.Header.Get("X-Callback-URL")
-	if callbackURL == "" {
-		return resp, fmt.Errorf("missing X-Callback-URL header")
-	}
-	code, _, err := rt.client.Codes.GetCode(codeID)
-	if err != nil {
-		fmt.Printf("error retrieving code: %v\n", err)
-		return resp, err
-	}
-	schedules, _, err := rt.client.Schedules.GetSchedulesWithCode(code.Name)
-	if err != nil {
-		fmt.Printf("error retrieving schedule: %v\n", err)
-		return resp, err
-	}
-	fmt.Printf("found %d matching schedule(s)\n", len(*schedules))
-
-	var schedule *iron.Schedule
-	var cfg siderite.CronPayload
-	for _, s := range *schedules {
-		_ = json.Unmarshal([]byte(s.Payload), &cfg)
-		if cfg.Type == "async" {
-			schedule = &s
-			break
-		}
-	}
-	if schedule == nil {
-		fmt.Printf("cannot locate async schedule for codeID: %s\n", codeID)
-		return resp, fmt.Errorf("cannot async locate schedule for codeID: %s", codeID)
-	}
-	fmt.Printf("creating async task from schedule %s\n", schedule.ID)
-	cacheRequest := request{
-		Callback: callbackURL,
-		Path:     path,
-	}
-	headers := make(map[string]string)
-	for k, v := range req.Header {
-		headers[k] = v[0]
-	}
-	if req.Body != nil {
-		data, err := ioutil.ReadAll(req.Body)
-		if err != nil {
-			fmt.Printf("error reading body: %v\n", err)
-			return resp, err
-		}
-		cacheRequest.Body = string(data)
-	}
-	jsonData, err := json.Marshal(&cacheRequest)
-	if err != nil {
-		fmt.Printf("error JSON enocding data: %v\n", err)
-		return resp, err
-	}
-	task, _, err := rt.client.Tasks.QueueTask(iron.Task{
-		CodeName: schedule.CodeName,
-		Payload:  cfg.EncryptedPayload,
-		Cluster:  schedule.Cluster,
-		Timeout:  backendKeepRunning,
-	})
-	if err != nil {
-		fmt.Printf("failed to spawn task: %v\n", err)
-		return resp, err
-	}
-	rt.requestCache.Set(task.ID, jsonData, cache.DefaultExpiration)
-	return &http.Response{
-		Status:     "202 Accepted",
-		StatusCode: http.StatusAccepted,
-		Proto:      "HTTP/1.1",
-		ProtoMajor: 1,
-		ProtoMinor: 1,
-		Request:    req,
-		Header:     make(http.Header),
-		Body:       ioutil.NopCloser(bytes.NewBufferString(fmt.Sprintf("{\"taskID\":\"%s\"}\n", task.ID))),
-	}, nil
-}
-
 type request struct {
 	Headers  map[string]string `json:"headers"`
 	Body     string            `json:"body"`
@@ -236,7 +149,7 @@ type request struct {
 	Path     string            `json:"path"`
 }
 
-func (rt *ironBackendRoundTripper) handlePayload(taskID string, req *http.Request) (*http.Response, error) {
+func (rt *ironBackendRoundTripper) getPayload(taskID string) ([]byte, error) {
 	fmt.Printf("searching cache for task: %s\n", taskID)
 	data, ok := rt.requestCache.Get(taskID)
 	if !ok {
@@ -248,20 +161,9 @@ func (rt *ironBackendRoundTripper) handlePayload(taskID string, req *http.Reques
 		fmt.Printf("cache item was not a byte array\n")
 		return nil, fmt.Errorf("cache item was not a byte array")
 	}
-	headers := make(http.Header)
-	headers.Set("Content-Type", "application/json")
 
 	fmt.Printf("returning payload: %s\n", string(requestData))
-	return &http.Response{
-		Status:     "200 OK",
-		StatusCode: http.StatusOK,
-		Proto:      "HTTP/1.1",
-		ProtoMajor: 1,
-		ProtoMinor: 1,
-		Request:    req,
-		Header:     headers,
-		Body:       ioutil.NopCloser(bytes.NewBuffer(requestData)),
-	}, nil
+	return requestData, nil
 }
 
 func main() {
@@ -303,11 +205,12 @@ func main() {
 
 	// Authentication
 	authType := os.Getenv("GATEWAY_AUTH_TYPE")
+	var authMiddleware echo.MiddlewareFunc
 	switch authType {
 	case "token":
-		e.Use(middlewareTokenAuth())
+		authMiddleware = middlewareTokenAuth()
 	case "iam":
-		e.Use(middlewareIAMAuth())
+		authMiddleware = middlewareIAMAuth()
 	}
 
 	// Reverse proxy
@@ -317,10 +220,20 @@ func main() {
 			URL: origin,
 		},
 	}
-	e.Use(middleware.ProxyWithConfig(middleware.ProxyConfig{
-		Balancer:  middleware.NewRoundRobinBalancer(targets),
-		Transport: newIronBackendRoundTripper(http.DefaultTransport, client, "localhost:8081"),
-	}))
+	balancer := middleware.NewRoundRobinBalancer(targets)
+	transport := newIronBackendRoundTripper(http.DefaultTransport, client, "localhost:8081")
+	proxyMiddleware := middleware.ProxyWithConfig(middleware.ProxyConfig{
+		Balancer:  balancer,
+		Transport: transport,
+	})
+
+	as := e.Group("/async-function", authMiddleware)
+	as.POST("/:codeID/*", asyncHandler(transport))
+	as.POST("/:codeID", asyncHandler(transport))
+
+	e.Group("/function", authMiddleware, proxyMiddleware)
+
+	e.Group("/payload", middlewareTokenAuth()).GET("/:taskID", payloadHandler(transport))
 
 	done, err := crontab.Start(client) // Start crontab
 	if err != nil {
@@ -330,6 +243,81 @@ func main() {
 
 	_ = e.Start(":8079")
 	done <- true
+}
+
+func asyncHandler(rt *ironBackendRoundTripper) echo.HandlerFunc {
+	return func(ctx echo.Context) error {
+		callbackURL := ctx.Request().Header.Get("X-Callback-URL")
+		if callbackURL == "" {
+			return fmt.Errorf("missing X-Callback-URL header")
+		}
+		codeID := ctx.Param("codeID")
+		path := ctx.Param("*")
+		code, _, err := rt.client.Codes.GetCode(codeID)
+		if err != nil {
+			return fmt.Errorf("error retrieving code: %w", err)
+		}
+		schedules, _, err := rt.client.Schedules.GetSchedulesWithCode(code.Name)
+		if err != nil {
+			return fmt.Errorf("error retrieving schedule: %w", err)
+		}
+		fmt.Printf("found %d matching schedule(s)\n", len(*schedules))
+
+		var schedule *iron.Schedule
+		var cfg siderite.CronPayload
+		for _, s := range *schedules {
+			_ = json.Unmarshal([]byte(s.Payload), &cfg)
+			if cfg.Type == "async" {
+				schedule = &s
+				break
+			}
+		}
+		if schedule == nil {
+			return fmt.Errorf("cannot async locate schedule for codeID: %s", codeID)
+		}
+		fmt.Printf("creating async task from schedule %s\n", schedule.ID)
+		cacheRequest := request{
+			Callback: callbackURL,
+			Path:     path,
+		}
+		headers := make(map[string]string)
+		for k, v := range ctx.Request().Header {
+			headers[k] = v[0]
+		}
+		if ctx.Request().Body != nil {
+			data, err := ioutil.ReadAll(ctx.Request().Body)
+			if err != nil {
+				return fmt.Errorf("error reading body: %w", err)
+			}
+			cacheRequest.Body = string(data)
+		}
+		jsonData, err := json.Marshal(&cacheRequest)
+		if err != nil {
+			return fmt.Errorf("error JSON enocding data: %w", err)
+		}
+		task, _, err := rt.client.Tasks.QueueTask(iron.Task{
+			CodeName: schedule.CodeName,
+			Payload:  cfg.EncryptedPayload,
+			Cluster:  schedule.Cluster,
+			Timeout:  backendKeepRunning,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to spawn task: %w", err)
+		}
+		rt.requestCache.Set(task.ID, jsonData, cache.DefaultExpiration)
+
+		return ctx.JSONBlob(http.StatusAccepted, []byte(fmt.Sprintf("{\"taskID\":\"%s\"}\n", task.ID)))
+	}
+}
+func payloadHandler(rt *ironBackendRoundTripper) echo.HandlerFunc {
+	return func(ctx echo.Context) error {
+		taskID := ctx.Param("taskID")
+		data, err := rt.getPayload(taskID)
+		if err != nil {
+			return err
+		}
+		return ctx.JSONBlob(http.StatusOK, data)
+	}
 }
 
 func middlewareIAMAuth() echo.MiddlewareFunc {
