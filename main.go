@@ -16,8 +16,8 @@ import (
 	"github.com/patrickmn/go-cache"
 	"github.com/philips-labs/ferrite/server"
 	"github.com/philips-labs/hsdp-funcion-gateway/crontab"
+	mw "github.com/philips-labs/hsdp-funcion-gateway/middleware"
 	siderite "github.com/philips-labs/siderite/models"
-	"github.com/philips-software/go-hsdp-api/iam"
 	"github.com/philips-software/go-hsdp-api/iron"
 )
 
@@ -25,23 +25,23 @@ const (
 	backendKeepRunning = 7200
 )
 
-type ironBackendRoundTripper struct {
-	client       *iron.Client
-	next         http.RoundTripper
-	host         string
-	requestCache *cache.Cache
+type IronBackendRoundTripper struct {
+	*iron.Client
+	*cache.Cache
+	next http.RoundTripper
+	host string
 }
 
-func newIronBackendRoundTripper(next http.RoundTripper, client *iron.Client, host string) *ironBackendRoundTripper {
+func NewIronBackendRoundTripper(next http.RoundTripper, client *iron.Client, host string) *IronBackendRoundTripper {
 	if next == nil {
 		next = http.DefaultTransport
 	}
 
-	return &ironBackendRoundTripper{
-		next:         next,
-		client:       client,
-		host:         host,
-		requestCache: cache.New(20*time.Minute, 40*time.Minute),
+	return &IronBackendRoundTripper{
+		next:   next,
+		Client: client,
+		host:   host,
+		Cache:  cache.New(20*time.Minute, 40*time.Minute),
 	}
 }
 
@@ -64,7 +64,7 @@ func waitForPort(timeout time.Duration, host string) (bool, error) {
 	}
 }
 
-func (rt *ironBackendRoundTripper) RoundTrip(req *http.Request) (resp *http.Response, err error) {
+func (rt *IronBackendRoundTripper) RoundTrip(req *http.Request) (resp *http.Response, err error) {
 	var upstreamRequestURI string
 	parts := strings.Split(req.RequestURI, "/")
 	if len(parts) < 3 || !(parts[1] == "function") {
@@ -82,13 +82,13 @@ func (rt *ironBackendRoundTripper) RoundTrip(req *http.Request) (resp *http.Resp
 	return rt.handleRequest(codeID, upstreamRequestURI, req)
 }
 
-func (rt *ironBackendRoundTripper) handleRequest(codeID, upstreamRequestURI string, req *http.Request) (resp *http.Response, err error) {
-	code, _, err := rt.client.Codes.GetCode(codeID)
+func (rt *IronBackendRoundTripper) handleRequest(codeID, upstreamRequestURI string, req *http.Request) (resp *http.Response, err error) {
+	code, _, err := rt.Client.Codes.GetCode(codeID)
 	if err != nil {
 		fmt.Printf("error retrieving code: %v\n", err)
 		return resp, err
 	}
-	schedules, _, err := rt.client.Schedules.GetSchedulesWithCode(code.Name)
+	schedules, _, err := rt.Client.Schedules.GetSchedulesWithCode(code.Name)
 	if err != nil {
 		fmt.Printf("error retrieving schedule: %v\n", err)
 		return resp, err
@@ -108,7 +108,7 @@ func (rt *ironBackendRoundTripper) handleRequest(codeID, upstreamRequestURI stri
 		return resp, fmt.Errorf("cannot locate schedule for codeID: %s", codeID)
 	}
 	fmt.Printf("creating task from schedule %s\n", schedule.CodeName)
-	task, _, err := rt.client.Tasks.QueueTask(iron.Task{
+	task, _, err := rt.Client.Tasks.QueueTask(iron.Task{
 		CodeName: schedule.CodeName,
 		Payload:  cfg.EncryptedPayload,
 		Cluster:  schedule.Cluster,
@@ -138,7 +138,7 @@ func (rt *ironBackendRoundTripper) handleRequest(codeID, upstreamRequestURI stri
 		fmt.Printf("response code: %d\n", resp.StatusCode)
 	}
 	fmt.Printf("cancelling task %s..\n", task.ID)
-	_, _, _ = rt.client.Tasks.CancelTask(task.ID)
+	_, _, _ = rt.Client.Tasks.CancelTask(task.ID)
 	return resp, err
 }
 
@@ -149,9 +149,9 @@ type request struct {
 	Path     string            `json:"path"`
 }
 
-func (rt *ironBackendRoundTripper) getPayload(taskID string) ([]byte, error) {
+func (rt *IronBackendRoundTripper) getPayload(taskID string) ([]byte, error) {
 	fmt.Printf("searching cache for task: %s\n", taskID)
-	data, ok := rt.requestCache.Get(taskID)
+	data, ok := rt.Cache.Get(taskID)
 	if !ok {
 		fmt.Printf("request data for taskID not found: %s\n", taskID)
 		return nil, fmt.Errorf("request data not found")
@@ -204,18 +204,27 @@ func main() {
 	e.Use(middleware.Logger())
 
 	// Authentication
+	authToken := os.Getenv("AUTH_TOKEN_TOKEN")
 	authType := os.Getenv("GATEWAY_AUTH_TYPE")
 	var authMiddleware echo.MiddlewareFunc
 	switch authType {
 	case "none":
-		authMiddleware = noneAuth()
+		authMiddleware = mw.NoneAuth()
 	case "iam":
-		authMiddleware = middlewareIAMAuth()
+		cfg := mw.IAMConfig{
+			ClientID:      os.Getenv("AUTH_IAM_CLIENT_ID"),
+			ClientSecret:  os.Getenv("AUTH_IAM_CLIENT_SECRET"),
+			Region:        os.Getenv("AUTH_IAM_REGION"),
+			Environment:   os.Getenv("AUTH_IAM_ENVIRONMENT"),
+			Organizations: strings.Split(os.Getenv("AUTH_IAM_ORGS"), ","),
+			Roles:         strings.Split(os.Getenv("AUTH_IAM_ROLES"), ","),
+		}
+		authMiddleware = mw.IAMAuth(cfg)
 	case "token":
-		authMiddleware = middlewareTokenAuth()
+		authMiddleware = mw.TokenAuth(authToken)
 	default:
 		fmt.Printf("invalid authType: %s, falling back to 'token'\n", authType)
-		authMiddleware = noneAuth()
+		authMiddleware = mw.TokenAuth(authToken)
 	}
 
 	// Reverse proxy
@@ -226,7 +235,7 @@ func main() {
 		},
 	}
 	balancer := middleware.NewRoundRobinBalancer(targets)
-	transport := newIronBackendRoundTripper(http.DefaultTransport, client, "localhost:8081")
+	transport := NewIronBackendRoundTripper(http.DefaultTransport, client, "localhost:8081")
 	proxyMiddleware := middleware.ProxyWithConfig(middleware.ProxyConfig{
 		Balancer:  balancer,
 		Transport: transport,
@@ -238,7 +247,7 @@ func main() {
 
 	e.Group("/function", authMiddleware, proxyMiddleware)
 
-	e.Group("/payload", middlewareTokenAuth()).GET("/:taskID", payloadHandler(transport))
+	e.Group("/payload", mw.TokenAuth(authToken)).GET("/:taskID", payloadHandler(transport))
 
 	done, err := crontab.Start(client) // Start crontab
 	if err != nil {
@@ -250,7 +259,7 @@ func main() {
 	done <- true
 }
 
-func asyncHandler(rt *ironBackendRoundTripper) echo.HandlerFunc {
+func asyncHandler(rt *IronBackendRoundTripper) echo.HandlerFunc {
 	return func(ctx echo.Context) error {
 		callbackURL := ctx.Request().Header.Get("X-Callback-URL")
 		if callbackURL == "" {
@@ -258,11 +267,11 @@ func asyncHandler(rt *ironBackendRoundTripper) echo.HandlerFunc {
 		}
 		codeID := ctx.Param("codeID")
 		path := ctx.Param("*")
-		code, _, err := rt.client.Codes.GetCode(codeID)
+		code, _, err := rt.Client.Codes.GetCode(codeID)
 		if err != nil {
 			return fmt.Errorf("error retrieving code: %w", err)
 		}
-		schedules, _, err := rt.client.Schedules.GetSchedulesWithCode(code.Name)
+		schedules, _, err := rt.Client.Schedules.GetSchedulesWithCode(code.Name)
 		if err != nil {
 			return fmt.Errorf("error retrieving schedule: %w", err)
 		}
@@ -300,7 +309,7 @@ func asyncHandler(rt *ironBackendRoundTripper) echo.HandlerFunc {
 		if err != nil {
 			return fmt.Errorf("error JSON enocding data: %w", err)
 		}
-		task, _, err := rt.client.Tasks.QueueTask(iron.Task{
+		task, _, err := rt.Client.Tasks.QueueTask(iron.Task{
 			CodeName: schedule.CodeName,
 			Payload:  cfg.EncryptedPayload,
 			Cluster:  schedule.Cluster,
@@ -309,12 +318,13 @@ func asyncHandler(rt *ironBackendRoundTripper) echo.HandlerFunc {
 		if err != nil {
 			return fmt.Errorf("failed to spawn task: %w", err)
 		}
-		rt.requestCache.Set(task.ID, jsonData, cache.DefaultExpiration)
+		rt.Cache.Set(task.ID, jsonData, cache.DefaultExpiration)
 
 		return ctx.JSONBlob(http.StatusAccepted, []byte(fmt.Sprintf("{\"taskID\":\"%s\"}\n", task.ID)))
 	}
 }
-func payloadHandler(rt *ironBackendRoundTripper) echo.HandlerFunc {
+
+func payloadHandler(rt *IronBackendRoundTripper) echo.HandlerFunc {
 	return func(ctx echo.Context) error {
 		taskID := ctx.Param("taskID")
 		data, err := rt.getPayload(taskID)
@@ -323,96 +333,4 @@ func payloadHandler(rt *ironBackendRoundTripper) echo.HandlerFunc {
 		}
 		return ctx.JSONBlob(http.StatusOK, data)
 	}
-}
-
-func middlewareIAMAuth() echo.MiddlewareFunc {
-	clientID := os.Getenv("AUTH_IAM_CLIENT_ID")
-	clientSecret := os.Getenv("AUTH_IAM_CLIENT_SECRET")
-	region := os.Getenv("AUTH_IAM_REGION")
-	environment := os.Getenv("AUTH_IAM_ENVIRONMENT")
-	orgIDs := strings.Split(os.Getenv("AUTH_IAM_ORGS"), ",")
-	roles := strings.Split(os.Getenv("AUTH_IAM_ROLES"), ",")
-	iamClient, err := iam.NewClient(http.DefaultClient, &iam.Config{
-		Region:         region,
-		Environment:    environment,
-		OAuth2ClientID: clientID,
-		OAuth2Secret:   clientSecret,
-	})
-	if err != nil {
-		return permanentError(err)
-	}
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			authHeader := c.Request().Header.Get("Authorization")
-			var token string
-			_, _ = fmt.Sscanf(authHeader, "Bearer %s", &token)
-			introspect, _, err := iamClient.WithToken(token).Introspect()
-			if err != nil {
-				_ = c.String(http.StatusUnauthorized, err.Error())
-				return err
-			}
-			allowed := false
-			for _, org := range introspect.Organizations.OrganizationList {
-				if allowed {
-					break
-				}
-				if !contains(orgIDs, org.OrganizationID) {
-					continue
-				}
-				for _, role := range org.Roles {
-					if contains(roles, role) {
-						allowed = true
-						continue
-					}
-				}
-			}
-			if !allowed {
-				_ = c.String(http.StatusUnauthorized, "access denied")
-				return fmt.Errorf("access denied")
-			}
-			return next(c)
-		}
-	}
-}
-
-func noneAuth() echo.MiddlewareFunc {
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			return next(c)
-		}
-	}
-}
-
-func middlewareTokenAuth() echo.MiddlewareFunc {
-	authToken := os.Getenv("AUTH_TOKEN_TOKEN")
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			authHeader := c.Request().Header.Get("Authorization")
-			var token string
-			_, _ = fmt.Sscanf(authHeader, "Token %s", &token)
-			if authToken != token {
-				_ = c.String(http.StatusUnauthorized, "invalid token")
-				return fmt.Errorf("invalid token")
-			}
-			return next(c)
-		}
-	}
-}
-
-func permanentError(err error) func(next echo.HandlerFunc) echo.HandlerFunc {
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			_ = c.String(http.StatusInternalServerError, err.Error())
-			return err
-		}
-	}
-}
-
-func contains(s []string, e string) bool {
-	for _, a := range s {
-		if a == e {
-			return true
-		}
-	}
-	return false
 }
