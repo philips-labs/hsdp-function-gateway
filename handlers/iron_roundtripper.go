@@ -100,11 +100,15 @@ func (rt *IronBackendRoundTripper) handleRequest(codeID, upstreamRequestURI stri
 		return resp, fmt.Errorf("cannot locate schedule for codeID: %s", codeID)
 	}
 	fmt.Printf("creating task from schedule %s\n", schedule.CodeName)
+	timeout := schedule.Timeout
+	if timeout < 60 {
+		timeout = backendKeepRunning
+	}
 	task, _, err := rt.Client.Tasks.QueueTask(iron.Task{
 		CodeName: schedule.CodeName,
 		Payload:  cfg.EncryptedPayload,
 		Cluster:  schedule.Cluster,
-		Timeout:  backendKeepRunning,
+		Timeout:  timeout,
 	})
 	if err != nil {
 		fmt.Printf("failed to spawn task: %v\n", err)

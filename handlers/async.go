@@ -62,11 +62,15 @@ func Async(rt *IronBackendRoundTripper) echo.HandlerFunc {
 		if err != nil {
 			return fmt.Errorf("error JSON enocding data: %w", err)
 		}
+		timeout := schedule.Timeout
+		if timeout < 60 {
+			timeout = backendKeepRunning
+		}
 		task, _, err := rt.Client.Tasks.QueueTask(iron.Task{
 			CodeName: schedule.CodeName,
 			Payload:  cfg.EncryptedPayload,
 			Cluster:  schedule.Cluster,
-			Timeout:  backendKeepRunning,
+			Timeout:  timeout,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to spawn task: %w", err)
