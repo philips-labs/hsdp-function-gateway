@@ -7,6 +7,6 @@ require (
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/philips-labs/ferrite v0.1.2
 	github.com/philips-labs/siderite v0.11.3
-	github.com/philips-software/go-hsdp-api v0.44.0
+	github.com/philips-software/go-hsdp-api v0.48.2
 	github.com/robfig/cron/v3 v3.0.1
 )
