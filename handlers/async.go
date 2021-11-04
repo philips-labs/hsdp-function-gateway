@@ -60,7 +60,7 @@ func Async(rt *IronBackendRoundTripper) echo.HandlerFunc {
 		}
 		jsonData, err := json.Marshal(&cacheRequest)
 		if err != nil {
-			return fmt.Errorf("error JSON enocding data: %w", err)
+			return fmt.Errorf("error JSON encoding data: %w", err)
 		}
 		timeout := schedule.Timeout
 		if timeout < 60 {

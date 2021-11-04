@@ -97,6 +97,7 @@ func main() {
 	af.POST("/:codeID", handlers.Async(transport))
 
 	e.Group("/function", authMiddleware, proxyMiddleware)
+	e.Group("/sync-function", authMiddleware, proxyMiddleware)
 
 	e.Group("/payload", mw.TokenAuth(authToken)).GET("/:taskID", handlers.Payload(transport))
 

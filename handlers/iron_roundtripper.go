@@ -59,7 +59,7 @@ func waitForPort(timeout time.Duration, host string) (bool, error) {
 func (rt *IronBackendRoundTripper) RoundTrip(req *http.Request) (resp *http.Response, err error) {
 	var upstreamRequestURI string
 	parts := strings.Split(req.RequestURI, "/")
-	if len(parts) < 3 || !(parts[1] == "function") {
+	if len(parts) < 3 || !(parts[1] == "function") { // TODO: remove prefix dependency
 		fmt.Printf("expected /function/{id}/..., got %s\n", req.RequestURI)
 		return resp, fmt.Errorf("invalid request: %s", req.RequestURI)
 	}
