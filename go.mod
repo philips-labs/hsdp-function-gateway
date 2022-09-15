@@ -7,7 +7,7 @@ require (
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/philips-labs/ferrite v0.1.2
 	github.com/philips-labs/siderite v0.12.2
-	github.com/philips-software/go-hsdp-api v0.61.9
+	github.com/philips-software/go-hsdp-api v0.73.5
 	github.com/robfig/cron/v3 v3.0.1
-	github.com/stretchr/testify v1.7.1
+	github.com/stretchr/testify v1.8.0
 )
