@@ -30,5 +30,4 @@ jobs:
          platforms: linux/amd64
          push: true
          tags: philipslabs/hsdp-func-gateway:latest
-         cache-from: type=registry,ref=philipslabs/hsdp-func-gateway:latest
          cache-to: type=inline
