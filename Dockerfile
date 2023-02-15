@@ -1,4 +1,4 @@
-FROM jpillora/chisel:1.8.1 as chisel
+FROM jpillora/chisel:1.8 as chisel
 
 FROM golang:alpine3.13 as builder
 WORKDIR /build
@@ -20,7 +20,7 @@ RUN mkdir -p /sidecars/bin /sidecars/supervisor/conf.d sidecars/etc
 
 COPY supervisord_configs/ /sidecars/supervisor/conf.d
 COPY --from=builder /build/app /sidecars/bin
-COPY --from=chisel /app/chisel /sidecars/bin
+COPY --from=chisel /app/bin /sidecars/bin/chisel
 
 EXPOSE 8080
 
