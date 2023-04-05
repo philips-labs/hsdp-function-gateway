@@ -1,6 +1,6 @@
 FROM jpillora/chisel:1.8 as chisel
 
-FROM golang:1.20.1 as builder
+FROM golang:1.20.3 as builder
 WORKDIR /build
 COPY go.mod .
 COPY go.sum .
