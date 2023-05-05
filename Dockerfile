@@ -1,4 +1,4 @@
-FROM jpillora/chisel:1.8 as chisel
+FROM jpillora/chisel:1.8.1 as chisel
 
 FROM golang:1.20.4 as builder
 WORKDIR /build
