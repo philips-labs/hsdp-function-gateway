@@ -9,7 +9,7 @@ require (
 	github.com/philips-labs/siderite v0.12.2
 	github.com/philips-software/go-hsdp-api v0.79.1
 	github.com/robfig/cron/v3 v3.0.1
-	github.com/stretchr/testify v1.8.1
+	github.com/stretchr/testify v1.8.2
 )
 
 require (
