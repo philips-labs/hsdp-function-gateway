@@ -6,7 +6,7 @@ require (
 	github.com/labstack/echo/v4 v4.10.0
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/philips-labs/ferrite v0.1.2
-	github.com/philips-labs/siderite v0.12.2
+	github.com/philips-labs/siderite v0.14.0
 	github.com/philips-software/go-hsdp-api v0.80.1
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/stretchr/testify v1.8.2
@@ -19,8 +19,10 @@ require (
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.13.0 // indirect
 	github.com/golang-jwt/jwt v3.2.2+incompatible // indirect
+	github.com/google/go-cmp v0.5.9 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/google/uuid v1.3.0 // indirect
+	github.com/kr/pretty v0.3.0 // indirect
 	github.com/labstack/gommon v0.4.0 // indirect
 	github.com/leodido/go-urn v1.2.4 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
