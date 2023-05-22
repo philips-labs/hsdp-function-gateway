@@ -7,7 +7,7 @@ require (
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/philips-labs/ferrite v0.1.2
 	github.com/philips-labs/siderite v0.14.0
-	github.com/philips-software/go-hsdp-api v0.80.1
+	github.com/philips-software/go-hsdp-api v0.81.0
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/stretchr/testify v1.8.2
 )
@@ -32,7 +32,7 @@ require (
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect
 	golang.org/x/crypto v0.8.0 // indirect
-	golang.org/x/net v0.9.0 // indirect
+	golang.org/x/net v0.10.0 // indirect
 	golang.org/x/sys v0.8.0 // indirect
 	golang.org/x/text v0.9.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
