@@ -11,7 +11,7 @@ COPY . .
 RUN go build -o app
 
 ## Build final image
-FROM alpine:3.18.3
+FROM alpine:3.18.5
 LABEL maintainer="andy.lo-a-foe@philips.com"
 RUN apk add --no-cache ca-certificates supervisor jq curl && rm -rf /tmp/* /var/cache/apk/*
 RUN apk add --no-cache yq --repository http://dl-cdn.alpinelinux.org/alpine/edge/community
