@@ -7,6 +7,13 @@ a helper microservice for the `hsdp_function` resource. It implements the follow
 - Sync and Async function endpoint handler
 - CRON scheduler
 
+## Disclaimer
+
+> [!Important]
+> This repository is managed as Philips Inner-source / Open-source.
+> This repository is NOT endorsed or supported by HSSA&P or I&S Cloud Operations. 
+> You are expected to self-support or raise tickets on the Github project and NOT raise tickets in HSP ServiceNow. 
+
 ## deploy
 
 The gateway should be deployed using the [siderite-backend](https://github.com/philips-labs/terraform-cloudfoundry-siderite-backend) Terraform module
